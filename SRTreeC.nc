@@ -20,6 +20,10 @@ module SRTreeC
 	uses interface AMPacket as NotifyAMPacket;
 	uses interface Packet as NotifyPacket;
 
+	uses interface AMSend as MyMSG_AMSend;
+	uses interface AMPacket as mYmsg_AMPacket;
+	uses interface Packet as MyMSG_Packet;
+
 #ifdef SERIAL_EN
 	uses interface AMSend as SerialAMSend;
 	uses interface AMPacket as SerialAMPacket;
@@ -30,9 +34,11 @@ module SRTreeC
 	uses interface Timer<TMilli> as Led2Timer;
 	uses interface Timer<TMilli> as RoutingMsgTimer;
 	uses interface Timer<TMilli> as LostTaskTimer;
+	uses interface Timer<TMilli> as EpochTimerC;
 	
 	uses interface Receive as RoutingReceive;
 	uses interface Receive as NotifyReceive;
+	uses interface Receive as MyMSG_Receive;
 	uses interface Receive as SerialReceive;
 	
 	uses interface PacketQueue as RoutingSendQueue;
@@ -40,6 +46,9 @@ module SRTreeC
 	
 	uses interface PacketQueue as NotifySendQueue;
 	uses interface PacketQueue as NotifyReceiveQueue;
+
+	uses interface PacketQueue as MyMSgSendQueueC;
+	uses interface PacketQueue as MyMSGReceiveQueueC;
 }
 implementation
 {
