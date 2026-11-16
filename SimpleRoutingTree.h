@@ -3,6 +3,7 @@
 
 
 enum{
+	AM_MYMSG=13,
 	SENDER_QUEUE_SIZE=5,
 	RECEIVER_QUEUE_SIZE=3,
 	AM_SIMPLEROUTINGTREEMSG=22,
@@ -21,6 +22,26 @@ typedef nx_struct RoutingMsg
 	nx_uint16_t senderID;
 	nx_uint8_t depth;
 } RoutingMsg;
+
+typedef nx_struct SumMsg{ 
+	nx_uint16_t  sum; 
+} SumMsg;
+
+typedef nx_struct MaxMsg{ 
+	nx_uint8_t  sum;
+} MaxMsg;
+
+typedef nx_struct AvgMsg{
+	nx_uint16_t sum; nx_uint8_t count;
+} AvgMsg;
+
+typedef nx_struct VarMsg{
+	nx_uint16_t sum;
+	nx_uint32_t sumSq;
+	nx_uint8_t count;
+} VarMsg;
+
+
 
 typedef nx_struct NotifyParentMsg
 {
