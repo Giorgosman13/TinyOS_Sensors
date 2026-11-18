@@ -3,6 +3,7 @@
 configuration SRTreeAppC @safe() { }
 implementation{
 	components SRTreeC;
+	components RandomC;
 
 #if defined(DELUGE) //defined(DELUGE_BASESTATION) || defined(DELUGE_LIGHT_BASESTATION)
 	components DelugeC;
@@ -37,9 +38,13 @@ implementation{
 	components new TimerMilliC() as RoutingMsgTimerC;
 	components new TimerMilliC() as LostTaskTimerC;
 	components new TimerMilliC() as EpochTimerC;
+	components new TimerMilliC() as TagTransmitTimerC;
 
 	SRTreeC.Boot->MainC.Boot;
 	
+	SRTreeC.Random -> RandomC;
+	SRTreeC.SeedInit -> RandomC.SeedInit;
+
 	SRTreeC.RadioControl -> ActiveMessageC;
 	SRTreeC.Leds-> LedsC;
 	
@@ -49,6 +54,7 @@ implementation{
 	SRTreeC.RoutingMsgTimer->RoutingMsgTimerC;
 	SRTreeC.LostTaskTimer->LostTaskTimerC;
 	SRTreeC.EpochTimer -> EpochTimerC;
+	SRTreeC.TagTransmitTimer -> TagTransmitTimerC;
 	
 	SRTreeC.RoutingPacket->RoutingSenderC.Packet;
 	SRTreeC.RoutingAMPacket->RoutingSenderC.AMPacket;

@@ -12,6 +12,8 @@ module SRTreeC
 	uses interface SplitControl as SerialControl;
 #endif
 
+	uses interface Random;
+	uses interface ParameterInit<uint16_t> as SeedInit;
 	uses interface Packet as RoutingPacket;
 	uses interface AMSend as RoutingAMSend;
 	uses interface AMPacket as RoutingAMPacket;
@@ -21,7 +23,7 @@ module SRTreeC
 	uses interface Packet as NotifyPacket;
 
 	uses interface AMSend as MyMSG_AMSend;
-	uses interface AMPacket as mYmsg_AMPacket;
+	uses interface AMPacket as MyMSG_AMPacket;
 	uses interface Packet as MyMSG_Packet;
 
 #ifdef SERIAL_EN
@@ -34,7 +36,8 @@ module SRTreeC
 	uses interface Timer<TMilli> as Led2Timer;
 	uses interface Timer<TMilli> as RoutingMsgTimer;
 	uses interface Timer<TMilli> as LostTaskTimer;
-	uses interface Timer<TMilli> as EpochTimerC;
+	uses interface Timer<TMilli> as EpochTimer;
+	uses interface Timer<TMilli> as TagTransmitTimer;
 	
 	uses interface Receive as RoutingReceive;
 	uses interface Receive as NotifyReceive;
@@ -47,23 +50,38 @@ module SRTreeC
 	uses interface PacketQueue as NotifySendQueue;
 	uses interface PacketQueue as NotifyReceiveQueue;
 
-	uses interface PacketQueue as MyMSgSendQueueC;
-	uses interface PacketQueue as MyMSGReceiveQueueC;
+	uses interface PacketQueue as MyMSGSendQueue;
+	uses interface PacketQueue as MyMSGReceiveQueue;
 }
 implementation
 {
 	uint16_t  roundCounter;
-	
+	uint8_t currentQueryType = 0;
+	uint8_t currentEpochDuration = 0;
+	uint16_t currentMeasurement = 0;
+	uint16_t aggSum = 0;
+	uint8_t  aggMax = 0;
+	uint16_t aggAvgSum = 0;
+	uint8_t  aggAvgCount = 0;
+	uint16_t aggVarSum = 0;
+	uint32_t aggVarSumSq = 0;
+	uint8_t  aggVarCount = 0;
+	bool isFirstEpoch = TRUE;
+	uint8_t currentEpochTag = 0;
+
+	message_t radioMyMSGSendPkt;
 	message_t radioRoutingSendPkt;
 	message_t radioNotifySendPkt;
 	
+	#define MAX_ESTIMATED_DEPTH 6
 	
 	message_t serialPkt;
 	//message_t serialRecPkt;
 	
 	bool RoutingSendBusy=FALSE;
 	bool NotifySendBusy=FALSE;
-
+	bool RoutingReceiveBusy=FALSE;
+	
 #ifdef SERIAL_EN
 	bool serialBusy=FALSE;
 #endif
@@ -178,6 +196,9 @@ implementation
 #endif
 	event void Boot.booted()
 	{
+		sim_time_t delay = sim_time() % 1024;
+		call SeedInit.init(delay);
+
 		/////// arxikopoiisi radio kai serial
 		call RadioControl.start();
 		
@@ -279,6 +300,17 @@ implementation
 		printfflush();
 #endif
 	}
+
+	event void MyMSG_AMSend.sendDone(message_t* msg, error_t err)
+	{
+		MyMSGSendBusy = FALSE;
+		dbg("SRTreeC", "MyMSG package sent status: %s\n", (err == SUCCESS) ? "SUCCESS" : "FAIL");
+
+		if (!call MyMSGSendQueue.empty())
+		{
+			post sendMyMSGTask();
+		}
+	}
 	
 	event void LostTaskTimer.fired()
 	{
@@ -311,25 +343,39 @@ implementation
 	{
 		message_t tmp;
 		error_t enqueueDone;
-		
 		RoutingMsg* mrpkt;
-		dbg("SRTreeC", "RoutingMsgTimer fired!  radioBusy = %s \n",(RoutingSendBusy)?"True":"False");
+
+		dbg("SRTreeC", "RoutingMsgTimer fired! radioBusy = %s \n",(RoutingSendBusy)?"True":"False");
 #ifdef PRINTFDBG_MODE
 		printfflush();
-		printf("RoutingMsgTimer fired!  radioBusy = %s \n",(RoutingSendBusy)?"True":"False");
+		printf("RoutingMsgTimer fired! radioBusy = %s \n",(RoutingSendBusy)?"True":"False");
 		printfflush();
 #endif
-		if (TOS_NODE_ID==0)
+
+		// 1. Get the payload pointer FIRST before writing to it
+		mrpkt = (RoutingMsg*) (call RoutingPacket.getPayload(&tmp, sizeof(RoutingMsg)));
+		if(mrpkt == NULL)
 		{
-			roundCounter+=1;
-			
-			dbg("SRTreeC", "\n ##################################### \n");
+			dbg("SRTreeC","RoutingMsgTimer.fired(): No valid payload... \n");
+#ifdef PRINTFDBG_MODE
+			printf("RoutingMsgTimer.fired(): No valid payload... \n");
+			printfflush();
+#endif
+			return;
+		}
+
+		if (TOS_NODE_ID == 0)
+		{
+			roundCounter += 1;
+			currentQueryType = (call Random.rand16() % 4) + 1;
+			currentEpochDuration = 30 + 10 * (call Random.rand16() % 8);
+
+			dbg("SRTreeC", "\n #################==================== \n");
 			dbg("SRTreeC", "#######   ROUND   %u    ############## \n", roundCounter);
 			dbg("SRTreeC", "#####################################\n");
-			
-			call RoutingMsgTimer.startOneShot(TIMER_PERIOD_MILLI);
+			dbg("SRTreeC", "Root selected QueryType = %u, EpochDuration = %u s\n", currentQueryType, currentEpochDuration);
 		}
-		
+
 		if(call RoutingSendQueue.full())
 		{
 #ifdef PRINTFDBG_MODE
@@ -339,22 +385,14 @@ implementation
 			return;
 		}
 		
+		atomic {
+			mrpkt->senderID = TOS_NODE_ID;
+			mrpkt->depth = curdepth;
+			mrpkt->queryType = currentQueryType;       // Populate from stored variable
+			mrpkt->epochDuration = currentEpochDuration; // Populate from stored variable
+		}
 		
-		mrpkt = (RoutingMsg*) (call RoutingPacket.getPayload(&tmp, sizeof(RoutingMsg)));
-		if(mrpkt==NULL)
-		{
-			dbg("SRTreeC","RoutingMsgTimer.fired(): No valid payload... \n");
-#ifdef PRINTFDBG_MODE
-			printf("RoutingMsgTimer.fired(): No valid payload... \n");
-			printfflush();
-#endif
-			return;
-		}
-		atomic{
-		mrpkt->senderID=TOS_NODE_ID;
-		mrpkt->depth = curdepth;
-		}
-		dbg("SRTreeC" , "Sending RoutingMsg... \n");
+		dbg("SRTreeC" , "Sending RoutingMsg... (Query=%u, Epoch=%u)\n", currentQueryType, currentEpochDuration);
 
 #ifdef PRINTFDBG_MODE
 		printf("NodeID= %d : RoutingMsg sending...!!!! \n", TOS_NODE_ID);
@@ -363,36 +401,194 @@ implementation
 		call RoutingAMPacket.setDestination(&tmp, AM_BROADCAST_ADDR);
 		call RoutingPacket.setPayloadLength(&tmp, sizeof(RoutingMsg));
 		
-		enqueueDone=call RoutingSendQueue.enqueue(tmp);
+		enqueueDone = call RoutingSendQueue.enqueue(tmp);
 		
-		if( enqueueDone==SUCCESS)
+		if(enqueueDone == SUCCESS)
 		{
-			if (call RoutingSendQueue.size()==1)
+			if (call RoutingSendQueue.size() == 1)
 			{
-				dbg("SRTreeC", "SendTask() posted!!\n");
-#ifdef PRINTFDBG_MODE
-				printf("SendTask() posted!!\n");
-				printfflush();
-#endif
 				post sendRoutingTask();
 			}
-			
 			dbg("SRTreeC","RoutingMsg enqueued successfully in SendingQueue!!!\n");
-#ifdef PRINTFDBG_MODE
-			printf("RoutingMsg enqueued successfully in SendingQueue!!!\n");
-			printfflush();
-#endif
 		}
 		else
 		{
 			dbg("SRTreeC","RoutingMsg failed to be enqueued in SendingQueue!!!");
-#ifdef PRINTFDBG_MODE			
-			printf("RoutingMsg failed to be enqueued in SendingQueue!!!\n");
-			printfflush();
-#endif
 		}		
 	}
 	
+	event void EpochTimer.fired()
+	{
+		uint8_t localMeasurement;
+
+		// Increment epoch tag for stale packet protection
+		currentEpochTag++;
+
+		if (isFirstEpoch) {
+			// First epoch: generate a completely random measurement between 1 and 100
+			localMeasurement = (call Random.rand16() % 100) + 1;
+			isFirstEpoch = FALSE;
+		} else {
+			// Subsequent epochs: apply ±25% drift rule bounded within [1, 100]
+			int16_t minVal = (int16_t)currentMeasurement - (int16_t)((uint32_t)currentMeasurement * 25 / 100);
+			int16_t maxVal = (int16_t)currentMeasurement + (int16_t)((uint32_t)currentMeasurement * 25 / 100);
+
+			if (minVal < 1) {
+				minVal = 1;
+			}
+			if (maxVal > 100) {
+				maxVal = 100;
+			}
+
+			// Generate a random value within the valid drifted range inclusive
+			localMeasurement = minVal + (call Random.rand16() % (maxVal - minVal + 1));
+		}
+
+		uint32_t epochMs = (uint32_t)currentEpochDuration * 1000UL;
+		uint32_t offset = call Random.rand16() % 50; // Small random offset to avoid collisions among nodes at the same depth
+		uint32_t transmitDelay;
+
+		if (epochMs > ((uint32_t)curdepth * 100UL + offset)) {
+			transmitDelay = epochMs - ((uint32_t)curdepth * 100UL) - offset;
+		} else {
+			transmitDelay = 100; // Fallback safety
+		}
+
+		dbg("SRTreeC", "Scheduling TagTransmitTimer: depth=%u, delay=%lu ms\n", curdepth, transmitDelay);
+#ifdef PRINTFDBG_MODE
+		printf("TagTransmitTimer scheduled for %lu ms\n", transmitDelay);
+		printfflush();
+#endif
+		call TagTransmitTimer.startOneShot(transmitDelay);
+
+		// Save current measurement for the next epoch's drift calculation
+		currentMeasurement = localMeasurement;
+
+		dbg("SRTreeC", "EpochTimer fired: EpochTag=%u, Generated Measurement=%u (QueryType=%u)\n", 
+			currentEpochTag, localMeasurement, currentQueryType);
+#ifdef PRINTFDBG_MODE
+		printf("EpochTimer fired: EpochTag=%u, Measurement=%u\n", currentEpochTag, localMeasurement);
+		printfflush();
+#endif
+
+		// Restart the EpochTimer for the next round using currentEpochDuration (converted to ms)
+		if (currentEpochDuration > 0) {
+			call EpochTimer.startOneShot((uint32_t)currentEpochDuration * 1000);
+		} else {
+			// Fallback default duration if uninitialized (e.g., 30 seconds)
+			call EpochTimer.startOneShot(30000);
+		}
+	}
+
+	event void TagTransmitTimer.fired()
+	{
+    message_t tmp;
+    error_t enqueueDone;
+    void* payload;
+    uint8_t payloadLen = 0;
+
+    dbg("SRTreeC", "TagTransmitTimer fired! NodeID=%u at depth=%u preparing to send data (Query=%u).\n", TOS_NODE_ID, curdepth, currentQueryType);
+#ifdef PRINTFDBG_MODE
+    printf("NodeID=%u TagTransmitTimer fired! Query=%u\n", TOS_NODE_ID, currentQueryType);
+    printfflush();
+#endif
+
+    // If node is root (depth 0), it doesn't send up to a parent via radio; it can print or handle results.
+    if (TOS_NODE_ID == 0)
+    {
+        dbg("SRTreeC", "Root node reached transmission time. Results for this epoch:\n");
+        // Print or handle root aggregation results here
+        return;
+    }
+
+    if (parentID == 0 || parentID >= 65535)
+    {
+        dbg("SRTreeC", "TagTransmitTimer: No valid parent to transmit to yet.\n");
+        return;
+    }
+
+    // Get payload pointer for unified MyMSG packet
+    payload = call MyMSG_Packet.getPayload(&tmp, sizeof(VarMsg)); // allocate max possible size temporarily
+    if (payload == NULL)
+    {
+        return;
+    }
+
+    // Pack data based on currentQueryType and include local measurement + accumulated values
+    switch (currentQueryType)
+    {
+        case 1: // SUM
+        {
+            SumMsg* msg = (SumMsg*)payload;
+            // Aggregate local measurement with children's aggSum
+            msg->sum = (uint16_t)currentMeasurement + aggSum;
+            payloadLen = sizeof(SumMsg); // len == 2
+            break;
+        }
+        case 2: // AVG
+        {
+            AvgMsg* msg = (AvgMsg*)payload;
+            msg->sum = (uint16_t)currentMeasurement + aggAvgSum;
+            msg->count = 1 + aggAvgCount;
+            payloadLen = sizeof(AvgMsg); // len == 3
+            break;
+        }
+        case 3: // VAR (Variance)
+        {
+            VarMsg* msg = (VarMsg*)payload;
+            msg->sum = (uint16_t)currentMeasurement + aggVarSum;
+            // Assuming simplified local sumSq for local measurement (e.g., measurement * measurement)
+            msg->sumSq = ((uint32_t)currentMeasurement * (uint32_t)currentMeasurement) + aggVarSumSq;
+            msg->count = 1 + aggVarCount;
+            payloadLen = sizeof(VarMsg); // len == 7
+            break;
+        }
+        case 4: // MAX
+        {
+            MaxMsg* msg = (MaxMsg*)payload;
+            uint8_t localMax = (currentMeasurement > aggMax) ? currentMeasurement : aggMax;
+            msg->sum = localMax;
+            payloadLen = sizeof(MaxMsg); // len == 1
+            break;
+        }
+        default:
+            dbg("SRTreeC", "Invalid query type during transmission: %u\n", currentQueryType);
+            return;
+    }
+
+    if (call MyMSGSendQueue.full())
+    {
+        dbg("SRTreeC", "MyMSGSendQueue is FULL! Dropping transmission packet.\n");
+        return;
+    }
+
+    call MyMSG_AMPacket.setDestination(&tmp, parentID);
+    call MyMSG_Packet.setPayloadLength(&tmp, payloadLen);
+
+    enqueueDone = call MyMSGSendQueue.enqueue(tmp);
+    if (enqueueDone == SUCCESS)
+    {
+        dbg("SRTreeC", "Data message successfully enqueued for parent ID=%u (len=%u)\n", parentID, payloadLen);
+        if (call MyMSGSendQueue.size() == 1)
+        {
+            post sendMyMSGTask(); // Make sure you implement sendMyMSGTask() similar to sendRoutingTask()
+        }
+    }
+    else
+    {
+        dbg("SRTreeC", "Failed to enqueue data message in MyMSGSendQueue.\n");
+    }
+
+    // Reset local accumulators for the next epoch/round
+		aggSum = 0;
+		aggMax = 0;
+		aggAvgSum = 0;
+		aggAvgCount = 0;
+		aggVarSum = 0;
+		aggVarSumSq = 0;
+		aggVarCount = 0;
+	}	
+
 	event void Led0Timer.fired()
 	{
 		call Leds.led0Off();
@@ -592,6 +788,31 @@ implementation
 #endif
 		return msg;
 	}
+
+	event message_t* MyMSG_Receive.receive(message_t* msg, void* payload, uint8_t len)
+	{
+		error_t enqueueDone;
+		message_t tmp;
+
+		dbg("SRTreeC", "### MyMSG_Receive.receive() start ##### len=%u\n", len);
+
+		atomic {
+			memcpy(&tmp, msg, sizeof(message_t));
+		}
+
+		enqueueDone = call MyMSGReceiveQueue.enqueue(tmp);
+
+		if (enqueueDone == SUCCESS)
+		{
+			post receiveDataTask();
+		}
+		else
+		{
+			dbg("SRTreeC", "MyMSGReceiveQueue enqueue failed!\n");
+		}
+
+		return msg;
+	}
 	
 	////////////// Tasks implementations //////////////////////////////
 	
@@ -748,6 +969,99 @@ implementation
 			//setNotifySendBusy(FALSE);
 		}
 	}
+
+	task void receiveDataTask()
+	{
+    message_t tmp;
+    uint8_t len;
+    message_t radioDataRecPkt;
+
+    if (call MyMSGReceiveQueue.empty()) {
+        return;
+    }
+
+    radioDataRecPkt = call MyMSGReceiveQueue.dequeue(); 
+    // Depending on your queue implementation, assuming standard dequeue:
+    // radioDataRecPkt = call MyMSGReceiveQueue.dequeue();
+    
+    len = call MyMSG_Packet.payloadLength(&radioDataRecPkt);
+    void* payload = call MyMSG_Packet.getPayload(&radioDataRecPkt, len);
+
+    if (payload == NULL) return;
+
+    // Dynamic Payload Sizing aggregation based on incoming len
+    switch (len) {
+        case sizeof(MaxMsg): { // len == 1
+            MaxMsg* msg = (MaxMsg*)payload;
+            if (msg->sum > aggMax) {
+                aggMax = msg->sum;
+            }
+            break;
+        }
+        case sizeof(SumMsg): { // len == 2
+            SumMsg* msg = (SumMsg*)payload;
+            aggSum += msg->sum;
+            break;
+        }
+        case sizeof(AvgMsg): { // len == 3
+            AvgMsg* msg = (AvgMsg*)payload;
+            aggAvgSum += msg->sum;
+            aggAvgCount += msg->count;
+            break;
+        }
+        case sizeof(VarMsg): { // len == 7
+            VarMsg* msg = (VarMsg*)payload;
+            aggVarSum += msg->sum;
+            aggVarSumSq += msg->sumSq;
+            aggVarCount += msg->count;
+            break;
+        }
+        default:
+            dbg("SRTreeC", "Unknown data packet length received: %u\n", len);
+            break;
+    }
+
+    dbg("SRTreeC", "Aggregated data packet of len=%u successfully.\n", len);
+#ifdef PRINTFDBG_MODE
+    printf("Aggregated data packet len=%u\n", len);
+    printfflush();
+#endif
+	}
+
+	task void sendMyMSGTask()
+	{
+    	uint8_t mlen;
+    	uint16_t mdest;
+    	error_t sendDone;
+
+		if (call MyMSGSendQueue.empty())
+		{
+			return;
+		}
+
+		if (MyMSGSendBusy)
+		{
+			return;
+		}
+
+		radioMyMSGSendPkt = call MyMSGSendQueue.dequeue();
+		mlen = call MyMSG_Packet.payloadLength(&radioMyMSGSendPkt);
+		mdest = call MyMSG_AMPacket.destination(&radioMyMSGSendPkt);
+
+		sendDone = call MyMSG_AMSend.send(mdest, &radioMyMSGSendPkt, mlen);
+		if (sendDone == SUCCESS)
+		{
+			MyMSGSendBusy = TRUE;
+			dbg("SRTreeC", "sendMyMSGTask(): Send returned success (dest=%u, len=%u)\n", mdest, mlen);
+		}
+		else
+		{
+			dbg("SRTreeC", "sendMyMSGTask(): Send failed.\n");
+		}
+	}
+
+
+
 	////////////////////////////////////////////////////////////////////
 	//*****************************************************************/
 	///////////////////////////////////////////////////////////////////
@@ -782,24 +1096,36 @@ implementation
 		{
 			NotifyParentMsg* m;
 			RoutingMsg * mpkt = (RoutingMsg*) (call RoutingPacket.getPayload(&radioRoutingRecPkt,len));
-			
+		
 			//if(TOS_NODE_ID >0)
 			//{
 				//call RoutingMsgTimer.startOneShot(TIMER_PERIOD_MILLI);
 			//}
 			//
 			
-			dbg("SRTreeC" , "receiveRoutingTask():senderID= %d , depth= %d \n", mpkt->senderID , mpkt->depth);
+dbg("SRTreeC" , "receiveRoutingTask(): senderID= %d , depth= %d , query=%u, epoch=%u\n", mpkt->senderID , mpkt->depth, mpkt->queryType, mpkt->epochDuration);
 #ifdef PRINTFDBG_MODE
-			printf("NodeID= %d , RoutingMsg received! \n",TOS_NODE_ID);
-			printf("receiveRoutingTask():senderID= %d , depth= %d \n", mpkt->senderID , mpkt->depth);
+			printf("NodeID= %d , RoutingMsg received from %u! \n", TOS_NODE_ID, mpkt->senderID);
 			printfflush();
 #endif
-			if ( (parentID<0)||(parentID>=65535))
+			if ( (parentID < 0) || (parentID >= 65535) )
 			{
-				// tote den exei akoma patera
-				parentID= call RoutingAMPacket.source(&radioRoutingRecPkt);//mpkt->senderID;q
-				curdepth= mpkt->depth + 1;
+				// First time joining the tree: set parent, depth, query, and epoch
+				parentID = call RoutingAMPacket.source(&radioRoutingRecPkt);
+				curdepth = mpkt->depth + 1;
+				currentQueryType = mpkt->queryType;         // Set once upon joining
+				currentEpochDuration = mpkt->epochDuration;
+
+				{
+				uint32_t epochMs = (uint32_t)currentEpochDuration * 1000UL;
+				uint32_t slotMs = epochMs / (6 + 1); // 6 is MAX_ESTIMATED_DEPTH
+				uint8_t effectiveDepth = (curdepth < 6) ? curdepth : (6 - 1);
+				uint32_t startDelay = (6 - effectiveDepth) * slotMs;
+				
+				call EpochTimer.startOneShot(startDelay);
+				}
+
+
 #ifdef PRINTFDBG_MODE
 				printf("NodeID= %d : curdepth= %d , parentID= %d \n", TOS_NODE_ID ,curdepth , parentID);
 				printfflush();

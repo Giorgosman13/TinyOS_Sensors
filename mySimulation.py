@@ -6,9 +6,9 @@ import random
 
 t=Tossim([])
 f=sys.stdout #open('./logfile.txt','w')
-SIM_END_TIME= 1000 * t.ticksPerSecond()
+SIM_END_TIME= 800 * t.ticksPerSecond()
 
-print "TicksPerSecond : ", t.ticksPerSecond(),"\n"
+print("TicksPerSecond : ", t.ticksPerSecond(),"\n")
 
 t.addChannel("Boot",f)
 t.addChannel("RoutingMsg",f)
@@ -16,27 +16,25 @@ t.addChannel("NotifyParentMsg",f)
 t.addChannel("Radio",f)
 #t.addChannel("Serial",f)
 t.addChannel("SRTreeC",f)
+t.addChannel("Result",f)
 #t.addChannel("PacketQueueC",f)
 
-for i in range(0,10):
-	m=t.getNode(i)
-	m.bootAtTime(10*t.ticksPerSecond() + i)
-
-
 topo = open("topology.txt", "r")
+lines = topo.readlines()
+topo.close()
 
-if topo is None:
-	print "Topology file not opened!!! \n"
-
+ids = set()
+r = t.radio()
+for line in lines:
+    s = line.split()
+    if len(s) > 0:
+        r.add(int(s[0]), int(s[1]), float(s[2]))
+        ids.add(int(s[0]))
+        ids.add(int(s[1]))
 
 	
-r=t.radio()
-lines = topo.readlines()
-for line in lines:
-  s = line.split()
-  if (len(s) > 0):
-    print " ", s[0], " ", s[1], " ", s[2];
-    r.add(int(s[0]), int(s[1]), float(s[2]))
+for i in sorted(ids):
+    t.getNode(i).bootAtTime(10 * t.ticksPerSecond() + i)
 
 mTosdir = os.getenv("TINYOS_ROOT_DIR")
 noiseF=open(mTosdir+"/tos/lib/tossim/noise/meyer-heavy.txt","r")
@@ -46,10 +44,12 @@ for line in  lines:
 	str1=line.strip()
 	if str1:
 		val=int(str1)
-		for i in range(0,10):
+		for i in sorted(ids):
 			t.getNode(i).addNoiseTraceReading(val)
+
 noiseF.close()
-for i in range(0,10):
+
+for i in sorted(ids):
 	t.getNode(i).createNoiseModel()
 	
 ok=False
@@ -61,7 +61,7 @@ while(h):
 		h=t.runNextEvent()
 		#print h
 	except:
-		print sys.exc_info()
+		print(sys.exc_info())
 #		e.print_stack_trace()
 
 	if (t.time()>= SIM_END_TIME):
@@ -69,8 +69,8 @@ while(h):
 	if(h<=0):
 		ok=False
 
-print "Node 0 connected with node 1" , r.connected(0,1) , r.connected(1,0)
-print "Node 0 connected with node 2" , r.connected(0,2) , r.connected(2,0)
-print "Node 1 connected with node 7" , r.connected(1,7) , r.connected(7,1)
-print "Node 2 connected with node 3" , r.connected(2,3) , r.connected(3,2)
-print "Node 4 connected with node 8" , r.connected(4,8) , r.connected(8,4)
+print("Node 0 connected with node 1" , r.connected(0,1) , r.connected(1,0))
+print("Node 0 connected with node 2" , r.connected(0,2) , r.connected(2,0))
+print("Node 1 connected with node 7" , r.connected(1,7) , r.connected(7,1))
+print("Node 2 connected with node 3" , r.connected(2,3) , r.connected(3,2))
+print("Node 4 connected with node 8" , r.connected(4,8) , r.connected(8,4))

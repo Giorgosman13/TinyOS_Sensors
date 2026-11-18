@@ -9,4 +9,4 @@ for i in range(D * D):
 		x2, y2 = j //D, j % D 
 
 		if math.sqrt((x1 -x2) **2 + (y1-y2)**2) <= R:
-			print(f"{i} {j}\n{j} {i}")
+			print(f"{i} {j} -50.0\n{j} {i} -50.0")
