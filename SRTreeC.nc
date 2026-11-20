@@ -37,12 +37,11 @@ module SRTreeC
 	uses interface Timer<TMilli> as RoutingMsgTimer;
 	uses interface Timer<TMilli> as LostTaskTimer;
 	uses interface Timer<TMilli> as EpochTimer;
-	uses interface Timer<TMilli> as TagTransmitTimer;
-	
+
 	uses interface Receive as RoutingReceive;
 	uses interface Receive as NotifyReceive;
-	uses interface Receive as MyMSG_Receive;
 	uses interface Receive as SerialReceive;
+	uses interface Receive as MyMSG_Receive;
 	
 	uses interface PacketQueue as RoutingSendQueue;
 	uses interface PacketQueue as RoutingReceiveQueue;
@@ -55,94 +54,67 @@ module SRTreeC
 }
 implementation
 {
-	uint16_t  roundCounter;
+	uint16_t  roundCounter = 0;
 	uint8_t currentQueryType = 0;
 	uint8_t currentEpochDuration = 0;
-	uint16_t currentMeasurement = 0;
-	uint16_t aggSum = 0;
-	uint8_t  aggMax = 0;
-	uint16_t aggAvgSum = 0;
-	uint8_t  aggAvgCount = 0;
-	uint16_t aggVarSum = 0;
-	uint32_t aggVarSumSq = 0;
-	uint8_t  aggVarCount = 0;
+	uint8_t currentMeasurement = 0;
+	uint8_t previousMeasurement = 0;
+
+	uint8_t localMeasurement = 0;
+
+	uint16_t childrenIDs[MAX_CHILDREN];
+	uint16_t childrenSum[MAX_CHILDREN];
+	uint32_t childrenSumSquared[MAX_CHILDREN];
+	uint8_t childrentNum[MAX_CHILDREN];
+	uint8_t childMax[MAX_CHILDREN];
+	uint8_t lastChild = 0;
+
 	bool isFirstEpoch = TRUE;
-	uint8_t currentEpochTag = 0;
 
 	message_t radioMyMSGSendPkt;
 	message_t radioRoutingSendPkt;
 	message_t radioNotifySendPkt;
 	
-	#define MAX_ESTIMATED_DEPTH 6
-	
 	message_t serialPkt;
 	//message_t serialRecPkt;
 	
 	bool RoutingSendBusy=FALSE;
-	bool NotifySendBusy=FALSE;
-	bool RoutingReceiveBusy=FALSE;
-	
-#ifdef SERIAL_EN
-	bool serialBusy=FALSE;
-#endif
-	
-	bool lostRoutingSendTask=FALSE;
-	bool lostNotifySendTask=FALSE;
-	bool lostRoutingRecTask=FALSE;
-	bool lostNotifyRecTask=FALSE;
+
+	bool MySendBusy=FALSE;
+
 	
 	uint8_t curdepth;
-	uint16_t parentID;
+	int16_t parentID;
 	
 	task void sendRoutingTask();
 	task void sendNotifyTask();
 	task void receiveRoutingTask();
 	task void receiveNotifyTask();
+	task void sendMyTask();
+	task void receiveMyTask();
+
+	int8_t findChildId(uint16_t id){
+		uint8_t i;
+
+		for (i = 0; i<lastChild; i++){
+			if(childrenID[i] == id){
+				return i;
+			}
+		}
+		if(lastChild == MAX_CHILDREN){
+			return -1;
+		}
+
+		childrenID[numChildren]=id;
+		childrenSum[numChildren]=0;
+		childrenSumSquared[numChildren]=0;
+		childrenCount[numChildren]=0;
+		childrenMax[numChildren] =0;
+
+		return lastChild++;
+	}	
 	
-	void setLostRoutingSendTask(bool state)
-	{
-		atomic{
-			lostRoutingSendTask=state;
-		}
-		if(state==TRUE)
-		{
-			//call Leds.led2On();
-		}
-		else 
-		{
-			//call Leds.led2Off();
-		}
-	}
 	
-	void setLostNotifySendTask(bool state)
-	{
-		atomic{
-		lostNotifySendTask=state;
-		}
-		
-		if(state==TRUE)
-		{
-			//call Leds.led2On();
-		}
-		else 
-		{
-			//call Leds.led2Off();
-		}
-	}
-	
-	void setLostNotifyRecTask(bool state)
-	{
-		atomic{
-		lostNotifyRecTask=state;
-		}
-	}
-	
-	void setLostRoutingRecTask(bool state)
-	{
-		atomic{
-		lostRoutingRecTask=state;
-		}
-	}
 	void setRoutingSendBusy(bool state)
 	{
 		atomic{
@@ -150,14 +122,20 @@ implementation
 		}
 		if(state==TRUE)
 		{
-			call Leds.led0On();
-			call Led0Timer.startOneShot(TIMER_LEDS_MILLI);
+			//call Leds.led0On();
+			//call Led0Timer.startOneShot(TIMER_LEDS_MILLI);
 		}
 		else 
 		{
 			//call Leds.led0Off();
 		}
 	}
+
+	void setMySendBusy(bool state)
+	{
+		MySendBusy=state;
+        }
+
 	
 	void setNotifySendBusy(bool state)
 	{
@@ -171,8 +149,8 @@ implementation
 		
 		if(state==TRUE)
 		{
-			call Leds.led1On();
-			call Led1Timer.startOneShot(TIMER_LEDS_MILLI);
+			//call Leds.led1On();
+			//call Led1Timer.startOneShot(TIMER_LEDS_MILLI);
 		}
 		else 
 		{
@@ -185,8 +163,8 @@ implementation
 		serialBusy=state;
 		if(state==TRUE)
 		{
-			call Leds.led2On();
-			call Led2Timer.startOneShot(TIMER_LEDS_MILLI);
+			//call Leds.led2On();
+			//call Led2Timer.startOneShot(TIMER_LEDS_MILLI);
 		}
 		else
 		{
@@ -197,7 +175,6 @@ implementation
 	event void Boot.booted()
 	{
 		sim_time_t delay = sim_time() % 1024;
-		call SeedInit.init(delay);
 
 		/////// arxikopoiisi radio kai serial
 		call RadioControl.start();
@@ -208,6 +185,8 @@ implementation
 		setSerialBusy(FALSE);
 #endif
 		roundCounter =0;
+		dbg("Boot", "random seed = %d\n", delay);
+        		call SeedInit.init(delay);
 		
 		if(TOS_NODE_ID==0)
 		{
@@ -216,6 +195,10 @@ implementation
 #endif
 			curdepth=0;
 			parentID=0;
+			currentEpochDuration = ((call Random.rand16() % 8) +3)*10
+			dbg("Boot", "epoch duration = %d\n", currentEpochDuration);
+			currentQueryType = (call Random.rand16() % 4) +1; //4 diaforetika eidh mhnymatwn
+			dbg("Boot", "queryTime = %d\n", currentQueryType);
 			dbg("Boot", "curdepth = %d  ,  parentID= %d \n", curdepth , parentID);
 #ifdef PRINTFDBG_MODE
 			printf("Booted NodeID= %d : curdepth= %d , parentID= %d \n", TOS_NODE_ID ,curdepth , parentID);
@@ -271,39 +254,10 @@ implementation
 		printfflush();
 #endif
 	}
-	event void SerialControl.startDone(error_t err)
-	{
-		if (err == SUCCESS)
-		{
-			dbg("Serial" , "Serial initialized successfully! \n");
-#ifdef PRINTFDBG_MODE
-			printf("Serial initialized successfully! \n");
-			printfflush();
-#endif
-			//call RoutingMsgTimer.startPeriodic(TIMER_PERIOD_MILLI);
-		}
-		else
-		{
-			dbg("Serial" , "Serial initialization failed! Retrying... \n");
-#ifdef PRINTFDBG_MODE
-			printf("Serial initialization failed! Retrying... \n");
-			printfflush();
-#endif
-			call SerialControl.start();
-		}
-	}
-	event void SerialControl.stopDone(error_t err)
-	{
-		dbg("Serial", "Serial stopped! \n");
-#ifdef PRINTFDBG_MODE
-		printf("Serial stopped! \n");
-		printfflush();
-#endif
-	}
 
 	event void MyMSG_AMSend.sendDone(message_t* msg, error_t err)
 	{
-		MyMSGSendBusy = FALSE;
+		setMySendBusy(FALSE);
 		dbg("SRTreeC", "MyMSG package sent status: %s\n", (err == SUCCESS) ? "SUCCESS" : "FAIL");
 
 		if (!call MyMSGSendQueue.empty())
@@ -352,64 +306,53 @@ implementation
 		printfflush();
 #endif
 
-		// 1. Get the payload pointer FIRST before writing to it
-		mrpkt = (RoutingMsg*) (call RoutingPacket.getPayload(&tmp, sizeof(RoutingMsg)));
-		if(mrpkt == NULL)
+		if (TOS_NODE_ID==0)
 		{
-			dbg("SRTreeC","RoutingMsgTimer.fired(): No valid payload... \n");
-#ifdef PRINTFDBG_MODE
-			printf("RoutingMsgTimer.fired(): No valid payload... \n");
-			printfflush();
-#endif
-			return;
-		}
-
-		if (TOS_NODE_ID == 0)
-		{
-			roundCounter += 1;
-			currentQueryType = (call Random.rand16() % 4) + 1;
-			currentEpochDuration = 30 + 10 * (call Random.rand16() % 8);
-
-			dbg("SRTreeC", "\n #################==================== \n");
+			roundCounter+=1;
+			
+			dbg("SRTreeC", "\n ##################################### \n");
 			dbg("SRTreeC", "#######   ROUND   %u    ############## \n", roundCounter);
 			dbg("SRTreeC", "#####################################\n");
-			dbg("SRTreeC", "Root selected QueryType = %u, EpochDuration = %u s\n", currentQueryType, currentEpochDuration);
+			
+			call EpochTimer.startPeriodicAt(0,(uint32_t)epochDuration*1024);
 		}
-
+		
 		if(call RoutingSendQueue.full())
 		{
-#ifdef PRINTFDBG_MODE
-			printf("RoutingSendQueue is FULL!!! \n");
-			printfflush();
-#endif
 			return;
 		}
 		
-		atomic {
-			mrpkt->senderID = TOS_NODE_ID;
-			mrpkt->depth = curdepth;
-			mrpkt->queryType = currentQueryType;       // Populate from stored variable
-			mrpkt->epochDuration = currentEpochDuration; // Populate from stored variable
-		}
 		
-		dbg("SRTreeC" , "Sending RoutingMsg... (Query=%u, Epoch=%u)\n", currentQueryType, currentEpochDuration);
+		mrpkt = (RoutingMsg*) (call RoutingPacket.getPayload(&tmp, sizeof(RoutingMsg)));
+		if(mrpkt==NULL)
+		{
+			dbg("SRTreeC","RoutingMsgTimer.fired(): No valid payload... \n");
+			return;
+		}
+		atomic{
+		mrpkt->senderID=TOS_NODE_ID;
+		mrpkt->depth = curdepth;
+		mrpkt->queryType = currentQueryType;
+		mrpkt->epochDuration = epochDuration;
+		}
+		dbg("SRTreeC" , "Sending RoutingMsg... \n");
 
-#ifdef PRINTFDBG_MODE
-		printf("NodeID= %d : RoutingMsg sending...!!!! \n", TOS_NODE_ID);
-		printfflush();
-#endif		
 		call RoutingAMPacket.setDestination(&tmp, AM_BROADCAST_ADDR);
 		call RoutingPacket.setPayloadLength(&tmp, sizeof(RoutingMsg));
 		
-		enqueueDone = call RoutingSendQueue.enqueue(tmp);
+		enqueueDone=call RoutingSendQueue.enqueue(tmp);
 		
-		if(enqueueDone == SUCCESS)
+		if( enqueueDone==SUCCESS)
 		{
-			if (call RoutingSendQueue.size() == 1)
+			if (call RoutingSendQueue.size()==1)
 			{
+				dbg("SRTreeC", "SendTask() posted!!\n");
+
 				post sendRoutingTask();
 			}
+			
 			dbg("SRTreeC","RoutingMsg enqueued successfully in SendingQueue!!!\n");
+
 		}
 		else
 		{
@@ -419,187 +362,172 @@ implementation
 	
 	event void EpochTimer.fired()
 	{
-		uint8_t localMeasurement;
+		uint8_t minVal, maxVal;
 
-		// Increment epoch tag for stale packet protection
-		currentEpochTag++;
+		uint16_t total_sum = 0;
+		uint32_t total_sum_squared = 0;
+		uint8_t total_count = 0;
+		uint8_t total_max = 0;
 
+		float var,avg;
+
+		message_t tmp;
+		SumMsg* sumpkt;
+		AvgMsg* avgpkt;
+		VarMsg* varpkt;
+		MaxMsg* maxpkt;
+
+		if(TOS_NODE_ID == 0){
+				switch (currentQueryType){
+					case 1:
+						for(int i=0;i<lastChild;i++){
+							total_sum += childrenSum[i];
+						}
+						dbg("Lab1", "We have reached the root!! Total_sum = %u\n ", total_sum);
+						break;
+					case 2:
+						for(int i=0;i<lastChild;i++){
+							total_sum += childrenSum[i];
+							total_count += childrenCount[i];
+						}
+
+						if (total_count == 0)  //den uparxei dendro
+						{
+							dbg("Lab1","No children found!!\n ");
+							return;
+						}
+
+						avg = (float)total_sum/total_count;
+						dbg("Lab1", "Root Message: Total_Average = %f\n ", avg);
+						break;
+
+					case 3:
+						for(int i=0;i<lastChild;i++){
+							total_sum += childrenSum[i];
+								total_count += childrenCount[i];
+								total_sum_squared += childrenSumSquared[i];
+							}
+						if (total_count == 0)  //den uparxei dendro
+						{
+							dbg("Lab1", "No children found!!\n ");
+							return;
+						}
+						var = (float)(total_sum_squared/total_count - (total_sum*total_sum)/(total_count*total_count));
+						dbg("Lab1","Root Message: Total_Variance = %f\n", var);
+						break;
+					case 4:
+						for(int i=0; i<lastChild;i++){
+							if(childMax[i]>total_max){
+								total_max = childMax[i];
+							}
+						}
+						dbg("Lab1", "Root Message: Total_Max = %u\n", total_max);
+						break;
+					default:
+						dbg("Lab1", "Epoch Timer Fired current query type bugged.\n");
+						break;
+				}	
+			return;
+		}
+
+		if (call MyMSGSendQueue.full() ){
+			return;
+		}
+
+		// 1. Generate measurement (1-100, with +/-25% drift after first epoch)
 		if (isFirstEpoch) {
-			// First epoch: generate a completely random measurement between 1 and 100
-			localMeasurement = (call Random.rand16() % 100) + 1;
+			currentMeasurement = (call Random.rand16() % 100) + 1;
 			isFirstEpoch = FALSE;
 		} else {
-			// Subsequent epochs: apply ±25% drift rule bounded within [1, 100]
-			int16_t minVal = (int16_t)currentMeasurement - (int16_t)((uint32_t)currentMeasurement * 25 / 100);
-			int16_t maxVal = (int16_t)currentMeasurement + (int16_t)((uint32_t)currentMeasurement * 25 / 100);
+			uint8_t minVal = currentMeasurement - (currentMeasurement * 0.25);
+			uint8_t maxVal = currentMeasurement + (currentMeasurement * 0.25);
+			if (minVal < 1) minVal = 1;
+			if (maxVal > 100) maxVal = 100;
 
-			if (minVal < 1) {
-				minVal = 1;
+			currentMeasurement = minVal + (call Random.rand16() % (maxVal - minVal + 1));
+		}
+
+		switch (currentQueryType) {
+			case 1: // SUM
+				sumpkt = (SumMsg*) (call MyMSG_Packet.getPayload(&tmp, sizeof(SumMsg)));
+				if (sumpkt == NULL) return;
+
+				for (i = 0; i < lastChild; i++) {
+					total_sum += childrenSum[i];
+				}
+				atomic {
+					sumpkt->sum = total_sum + currentMeasurement;
+				}
+				call MyMSG_AMPacket.setDestination(&tmp, parentID);
+				call MyMSG_Packet.setPayloadLength(&tmp, sizeof(SumMsg));
+				break;
+
+			case 2: // AVG
+				avgpkt = (AvgMsg*) (call MyMSG_Packet.getPayload(&tmp, sizeof(AvgMsg)));
+				if (avgpkt == NULL) return;
+
+				for (i = 0; i < lastChild; i++) {
+					total_sum += childrenSum[i];
+					total_count += childrenCount[i];
+				}
+				atomic {
+					avgpkt->sum = total_sum + currentMeasurement;
+					avgpkt->count = total_count + 1;
+				}
+				call MyMSG_AMPacket.setDestination(&tmp, parentID);
+				call MyMSG_Packet.setPayloadLength(&tmp, sizeof(AvgMsg));
+				break;
+
+			case 3: // VARIANCE
+				varpkt = (VarMsg*) (call MyMSG_Packet.getPayload(&tmp, sizeof(VarMsg)));
+				if (varpkt == NULL) return;
+
+				for (i = 0; i < lastChild; i++) {
+					total_sum += childrenSum[i];
+					total_sum_squared += childrenSumSquared[i];
+					total_count += childrenCount[i];
+				}
+				atomic {
+					varpkt->sum = total_sum + currentMeasurement;
+					varpkt->sumSq = total_sum_squared + ((uint32_t)currentMeasurement * (uint32_t)currentMeasurement);
+					varpkt->count = total_count + 1;
+				}
+				call MyMSG_AMPacket.setDestination(&tmp, parentID);
+				call MyMSG_Packet.setPayloadLength(&tmp, sizeof(VarMsg));
+				break;
+
+			case 4: // MAX
+				maxpkt = (MaxMsg*) (call MyMSG_Packet.getPayload(&tmp, sizeof(MaxMsg)));
+				if (maxpkt == NULL) return;
+
+				for (i = 0; i < lastChild; i++) {
+					if (childMax[i] > total_max) {
+						total_max = childMax[i];
+					}
+				}
+				if (currentMeasurement > total_max) {
+					total_max = currentMeasurement;
+				}
+				atomic {
+					maxpkt->max = total_max; // Change to maxpkt->sum if your header uses 'sum'
+				}
+				call MyMSG_AMPacket.setDestination(&tmp, parentID);
+				call MyMSG_Packet.setPayloadLength(&tmp, sizeof(MaxMsg));
+				break;
+
+			default:
+				return;
+		}
+		
+		error_t enqueueDone = call MyMSGSendQueue.enqueue(tmp);
+		if (enqueueDone == SUCCESS) {
+			if (call MyMSGSendQueue.size() == 1) {
+				post sendMyMSGTask();
 			}
-			if (maxVal > 100) {
-				maxVal = 100;
-			}
-
-			// Generate a random value within the valid drifted range inclusive
-			localMeasurement = minVal + (call Random.rand16() % (maxVal - minVal + 1));
-		}
-
-		uint32_t epochMs = (uint32_t)currentEpochDuration * 1000UL;
-		uint32_t offset = call Random.rand16() % 50; // Small random offset to avoid collisions among nodes at the same depth
-		uint32_t transmitDelay;
-
-		if (epochMs > ((uint32_t)curdepth * 100UL + offset)) {
-			transmitDelay = epochMs - ((uint32_t)curdepth * 100UL) - offset;
 		} else {
-			transmitDelay = 100; // Fallback safety
+			dbg("Lab1", "Message failed to be enqueued in MyMSGSendQueue!\n");
 		}
-
-		dbg("SRTreeC", "Scheduling TagTransmitTimer: depth=%u, delay=%lu ms\n", curdepth, transmitDelay);
-#ifdef PRINTFDBG_MODE
-		printf("TagTransmitTimer scheduled for %lu ms\n", transmitDelay);
-		printfflush();
-#endif
-		call TagTransmitTimer.startOneShot(transmitDelay);
-
-		// Save current measurement for the next epoch's drift calculation
-		currentMeasurement = localMeasurement;
-
-		dbg("SRTreeC", "EpochTimer fired: EpochTag=%u, Generated Measurement=%u (QueryType=%u)\n", 
-			currentEpochTag, localMeasurement, currentQueryType);
-#ifdef PRINTFDBG_MODE
-		printf("EpochTimer fired: EpochTag=%u, Measurement=%u\n", currentEpochTag, localMeasurement);
-		printfflush();
-#endif
-
-		// Restart the EpochTimer for the next round using currentEpochDuration (converted to ms)
-		if (currentEpochDuration > 0) {
-			call EpochTimer.startOneShot((uint32_t)currentEpochDuration * 1000);
-		} else {
-			// Fallback default duration if uninitialized (e.g., 30 seconds)
-			call EpochTimer.startOneShot(30000);
-		}
-	}
-
-	event void TagTransmitTimer.fired()
-	{
-    message_t tmp;
-    error_t enqueueDone;
-    void* payload;
-    uint8_t payloadLen = 0;
-
-    dbg("SRTreeC", "TagTransmitTimer fired! NodeID=%u at depth=%u preparing to send data (Query=%u).\n", TOS_NODE_ID, curdepth, currentQueryType);
-#ifdef PRINTFDBG_MODE
-    printf("NodeID=%u TagTransmitTimer fired! Query=%u\n", TOS_NODE_ID, currentQueryType);
-    printfflush();
-#endif
-
-    // If node is root (depth 0), it doesn't send up to a parent via radio; it can print or handle results.
-    if (TOS_NODE_ID == 0)
-    {
-        dbg("SRTreeC", "Root node reached transmission time. Results for this epoch:\n");
-        // Print or handle root aggregation results here
-        return;
-    }
-
-    if (parentID == 0 || parentID >= 65535)
-    {
-        dbg("SRTreeC", "TagTransmitTimer: No valid parent to transmit to yet.\n");
-        return;
-    }
-
-    // Get payload pointer for unified MyMSG packet
-    payload = call MyMSG_Packet.getPayload(&tmp, sizeof(VarMsg)); // allocate max possible size temporarily
-    if (payload == NULL)
-    {
-        return;
-    }
-
-    // Pack data based on currentQueryType and include local measurement + accumulated values
-    switch (currentQueryType)
-    {
-        case 1: // SUM
-        {
-            SumMsg* msg = (SumMsg*)payload;
-            // Aggregate local measurement with children's aggSum
-            msg->sum = (uint16_t)currentMeasurement + aggSum;
-            payloadLen = sizeof(SumMsg); // len == 2
-            break;
-        }
-        case 2: // AVG
-        {
-            AvgMsg* msg = (AvgMsg*)payload;
-            msg->sum = (uint16_t)currentMeasurement + aggAvgSum;
-            msg->count = 1 + aggAvgCount;
-            payloadLen = sizeof(AvgMsg); // len == 3
-            break;
-        }
-        case 3: // VAR (Variance)
-        {
-            VarMsg* msg = (VarMsg*)payload;
-            msg->sum = (uint16_t)currentMeasurement + aggVarSum;
-            // Assuming simplified local sumSq for local measurement (e.g., measurement * measurement)
-            msg->sumSq = ((uint32_t)currentMeasurement * (uint32_t)currentMeasurement) + aggVarSumSq;
-            msg->count = 1 + aggVarCount;
-            payloadLen = sizeof(VarMsg); // len == 7
-            break;
-        }
-        case 4: // MAX
-        {
-            MaxMsg* msg = (MaxMsg*)payload;
-            uint8_t localMax = (currentMeasurement > aggMax) ? currentMeasurement : aggMax;
-            msg->sum = localMax;
-            payloadLen = sizeof(MaxMsg); // len == 1
-            break;
-        }
-        default:
-            dbg("SRTreeC", "Invalid query type during transmission: %u\n", currentQueryType);
-            return;
-    }
-
-    if (call MyMSGSendQueue.full())
-    {
-        dbg("SRTreeC", "MyMSGSendQueue is FULL! Dropping transmission packet.\n");
-        return;
-    }
-
-    call MyMSG_AMPacket.setDestination(&tmp, parentID);
-    call MyMSG_Packet.setPayloadLength(&tmp, payloadLen);
-
-    enqueueDone = call MyMSGSendQueue.enqueue(tmp);
-    if (enqueueDone == SUCCESS)
-    {
-        dbg("SRTreeC", "Data message successfully enqueued for parent ID=%u (len=%u)\n", parentID, payloadLen);
-        if (call MyMSGSendQueue.size() == 1)
-        {
-            post sendMyMSGTask(); // Make sure you implement sendMyMSGTask() similar to sendRoutingTask()
-        }
-    }
-    else
-    {
-        dbg("SRTreeC", "Failed to enqueue data message in MyMSGSendQueue.\n");
-    }
-
-    // Reset local accumulators for the next epoch/round
-		aggSum = 0;
-		aggMax = 0;
-		aggAvgSum = 0;
-		aggAvgCount = 0;
-		aggVarSum = 0;
-		aggVarSumSq = 0;
-		aggVarCount = 0;
-	}	
-
-	event void Led0Timer.fired()
-	{
-		call Leds.led0Off();
-	}
-	event void Led1Timer.fired()
-	{
-		call Leds.led1Off();
-	}
-	event void Led2Timer.fired()
-	{
-		call Leds.led2Off();
+		
 	}
 	
 	event void RoutingAMSend.sendDone(message_t * msg , error_t err)
