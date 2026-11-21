@@ -1,76 +1,77 @@
 #!/usr/bin/python
 
 from TOSSIM import *
-import sys ,os
+import sys, os
 import random
 
-t=Tossim([])
-f=sys.stdout #open('./logfile.txt','w')
-SIM_END_TIME= 1000 * t.ticksPerSecond()
+t = Tossim([])
+f = sys.stdout # Change to open('./logfile.txt', 'w') to save output to a file
+SIM_END_TIME = 1000 * t.ticksPerSecond()
 
-print "TicksPerSecond : ", t.ticksPerSecond(),"\n"
+print "TicksPerSecond : ", t.ticksPerSecond(), "\n"
 
-t.addChannel("Boot",f)
-t.addChannel("RoutingMsg",f)
-t.addChannel("NotifyParentMsg",f)
-t.addChannel("Radio",f)
-#t.addChannel("Serial",f)
-t.addChannel("SRTreeC",f)
-#t.addChannel("PacketQueueC",f)
+# Essential channels for your project
+t.addChannel("Boot", f)
+t.addChannel("Project", f)
 
-for i in range(0,10):
-	m=t.getNode(i)
-	m.bootAtTime(10*t.ticksPerSecond() + i)
+# Uncomment these if you want full packet-by-packet debug logs:
+# t.addChannel("SRTreeC", f)
+# t.addChannel("Radio", f)
 
+r = t.radio()
+max_node_id = 0
 
+# 1. Load topology and auto-detect node count
 topo = open("topology.txt", "r")
+for line in topo:
+	s = line.split()
+	if len(s) >= 3:
+		u = int(s[0])
+		v = int(s[1])
+		gain = float(s[2])
+		r.add(u, v, gain)
+		if u > max_node_id:
+			max_node_id = u
+		if v > max_node_id:
+			max_node_id = v
+topo.close()
 
-if topo is None:
-	print "Topology file not opened!!! \n"
+NUM_NODES = max_node_id + 1
+print "Loaded topology with", NUM_NODES, "nodes."
 
+# 2. Boot all nodes
+offset = random.randint(0, 1023)
+for i in range(0, NUM_NODES):
+	m = t.getNode(i)
+	m.bootAtTime(10 * t.ticksPerSecond() + offset + i)
 
-	
-r=t.radio()
-lines = topo.readlines()
-for line in lines:
-  s = line.split()
-  if (len(s) > 0):
-    print " ", s[0], " ", s[1], " ", s[2];
-    r.add(int(s[0]), int(s[1]), float(s[2]))
-
+# 3. Load noise model (capped at 100 lines for fast initialization)
 mTosdir = os.getenv("TINYOS_ROOT_DIR")
-noiseF=open(mTosdir+"/tos/lib/tossim/noise/meyer-heavy.txt","r")
-lines= noiseF.readlines()
-
-for line in  lines:
-	str1=line.strip()
-	if str1:
-		val=int(str1)
-		for i in range(0,10):
-			t.getNode(i).addNoiseTraceReading(val)
+noiseF = open(mTosdir + "/tos/lib/tossim/noise/meyer-heavy.txt", "r")
+noise_lines = noiseF.readlines()[:100]
 noiseF.close()
-for i in range(0,10):
+
+for line in noise_lines:
+	str1 = line.strip()
+	if str1:
+		val = int(str1)
+		for i in range(0, NUM_NODES):
+			t.getNode(i).addNoiseTraceReading(val)
+
+for i in range(0, NUM_NODES):
 	t.getNode(i).createNoiseModel()
-	
-ok=False
-#if(t.getNode(0).isOn()==True):
-#	ok=True
-h=True
-while(h):
+
+# 4. Run simulation
+h = True
+while h:
 	try:
-		h=t.runNextEvent()
-		#print h
+		h = t.runNextEvent()
 	except:
 		print sys.exc_info()
-#		e.print_stack_trace()
 
-	if (t.time()>= SIM_END_TIME):
-		h=False
-	if(h<=0):
-		ok=False
+	if t.time() >= SIM_END_TIME:
+		h = False
+	if h <= 0:
+		h = False
 
-print "Node 0 connected with node 1" , r.connected(0,1) , r.connected(1,0)
-print "Node 0 connected with node 2" , r.connected(0,2) , r.connected(2,0)
-print "Node 1 connected with node 7" , r.connected(1,7) , r.connected(7,1)
-print "Node 2 connected with node 3" , r.connected(2,3) , r.connected(3,2)
-print "Node 4 connected with node 8" , r.connected(4,8) , r.connected(8,4)
+print "Simulation finished."
