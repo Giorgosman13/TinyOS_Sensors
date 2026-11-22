@@ -590,7 +590,7 @@ implementation
 			case sizeof(MaxMsg): // len == 1
 			{
 				MaxMsg* msg = (MaxMsg*)payload;
-				childrenMax[childIdx] = msg->sum;
+				childrenMax[childIdx] = msg->max;
 				break;
 			}
 			case sizeof(SumMsg): // len == 2

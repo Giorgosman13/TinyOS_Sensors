@@ -40,7 +40,7 @@ typedef nx_struct SumMsg{
 
 //For the MAX we just need one byte. That is because the maximum measurement a node can make is 100 which fits in just one byte
 typedef nx_struct MaxMsg{ 
-	nx_uint8_t  sum;
+	nx_uint8_t  max;
 } MaxMsg; //1 byte
 
 //For the average we need 2 different numbers so we can make the calc in the end. We make their sizes as such because
