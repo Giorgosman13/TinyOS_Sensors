@@ -6,12 +6,14 @@ import random
 
 t = Tossim([])
 f = sys.stdout # Change to open('./logfile.txt', 'w') to save output to a file
-SIM_END_TIME = 1000 * t.ticksPerSecond()
+#Set the maximum simulation time
+SIM_END_TIME = 800 * t.ticksPerSecond()
 
 print "TicksPerSecond : ", t.ticksPerSecond(), "\n"
 
 # Essential channels for your project
 t.addChannel("Boot", f)
+#Create the new debug channel
 t.addChannel("Project", f)
 
 # Uncomment these if you want full packet-by-packet debug logs:

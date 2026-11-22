@@ -2,14 +2,16 @@
 #ifdef PRINTFDBG_MODE
 	#include "printf.h"
 #endif
-#define MAX_CHILDREN 500
+
+//We set a number of max children per parent node so the code can run safely without overflow
+#define MAX_CHILDREN 250
 
 
 module SRTreeC
 {
 	uses interface Boot;
 	uses interface SplitControl as RadioControl;
-
+	//Added the random number generator interface
 	uses interface Random;
 	uses interface ParameterInit<uint16_t> as SeedInit;
 	uses interface Packet as RoutingPacket;
@@ -21,36 +23,40 @@ module SRTreeC
 	uses interface Packet as MyMSG_Packet;
 
 	uses interface Timer<TMilli> as RoutingMsgTimer;
-	uses interface Timer<TMilli> as EpochTimer;
+	uses interface Timer<TMilli> as EpochTimer;  //Periodic timer TAG data aggregation epochs
 
 	uses interface Receive as RoutingReceive;
-	uses interface Receive as MyMSG_Receive;
+	uses interface Receive as MyMSG_Receive; //Receiver interface import for new message
 	
 	uses interface PacketQueue as RoutingSendQueue;
 	uses interface PacketQueue as RoutingReceiveQueue;
 
+	//Setting up new packet queues that are First in first out logic
 	uses interface PacketQueue as MyMSGSendQueue;
 	uses interface PacketQueue as MyMSGReceiveQueue;
 }
 implementation
 {
 	uint16_t  roundCounter = 0;
+
+	//TAG parameters and local parameters for measurements
 	uint8_t currentQueryType = 0;
 	uint8_t currentEpochDuration = 0;
 	uint8_t currentMeasurement = 0;
 	uint8_t previousMeasurement = 0;
-
 	uint8_t localMeasurement = 0;
 
+	//Arrays to store the data received from each child
 	uint16_t childrenIDs[MAX_CHILDREN];
 	uint16_t childrenSum[MAX_CHILDREN];
 	uint32_t childrenSumSquared[MAX_CHILDREN];
 	uint8_t childrenNum[MAX_CHILDREN];
 	uint8_t childrenMax[MAX_CHILDREN];
-	uint8_t lastChild = 0;
+	uint8_t lastChild = 0; //Number of active children of the node
 
-	bool isFirstEpoch = TRUE;
+	bool isFirstEpoch = TRUE; //a bool to know if its the first epoch so we can initiliaze the random values
 
+	//Buffer to save the pkt of new message before sending it
 	message_t radioMyMSGSendPkt;
 	message_t radioRoutingSendPkt;
 	
@@ -59,6 +65,7 @@ implementation
 	
 	bool RoutingSendBusy=FALSE;
 
+	//A flag to know if a message is being transmitted
 	bool MySendBusy=FALSE;
 
 	
@@ -67,11 +74,15 @@ implementation
 	
 	task void sendRoutingTask();
 	task void receiveRoutingTask();
+
+	//One dequeues and transmits the needed data to the parent and the other stores the incoming data
 	task void sendMyMSGTask();
 	task void receiveMyTask();
 
-	int8_t findChildId(uint16_t id){
-		uint8_t i;
+	//Finds the child's index from the array and if it isnt found it initializes it on the list
+	//and puts it in a new spot if it doesnt fit it returns -1
+	int16_t findChildId(uint16_t id){
+		int16_t i;
 
 		for (i = 0; i<lastChild; i++){
 			if(childrenIDs[i] == id){
@@ -99,13 +110,16 @@ implementation
 		}
 	}
 
+	//Updates the busy flag for myMsg
 	void setMySendBusy(bool state)
 	{
 		MySendBusy=state;
-        }
+    }
+
 
 	event void Boot.booted()
 	{
+		//Create the delay as the seed so we get a random seed
 		sim_time_t delay = sim_time() % 1024;
 
 		/////// arxikopoiisi radio kai serial
@@ -120,8 +134,10 @@ implementation
 		{
 			curdepth=0;
 			parentID=0;
+			//The root randomly selects epoch duration randomly at the start from 30s and 100s
 			currentEpochDuration = ((call Random.rand16() % 8) +3)*10;
 			dbg("Boot", "epoch duration = %d\n", currentEpochDuration);
+			//The root randomly selects the query type from 1 to 4
 			currentQueryType = (call Random.rand16() % 4) +1; //4 diaforetika eidh mhnymatwn
 			dbg("Boot", "message type = %d\n", currentQueryType);
 			dbg("Boot", "curdepth = %d  ,  parentID= %d \n", curdepth , parentID);
@@ -156,8 +172,10 @@ implementation
 		dbg("Radio", "Radio stopped!\n");
 	}
 
+	//A event that signals when a transmission is completed.
 	event void MyMSG_AMSend.sendDone(message_t* msg, error_t err)
 	{
+		//It is completed so it is not longer busy
 		setMySendBusy(FALSE);
 		dbg("SRTreeC", "MyMSG package sent status: %s\n", (err == SUCCESS) ? "SUCCESS" : "FAIL");
 
@@ -199,6 +217,7 @@ implementation
 			dbg("SRTreeC","RoutingMsgTimer.fired(): No valid payload... \n");
 			return;
 		}
+		//Here we also added that the routing packet should contain the query type and the epoch duration
 		atomic{
 		mrpkt->senderID=TOS_NODE_ID;
 		mrpkt->depth = curdepth;
@@ -229,9 +248,10 @@ implementation
 			dbg("SRTreeC","RoutingMsg failed to be enqueued in SendingQueue!!!");
 		}		
 	}
-	
+	//Event that handles how the epochtimer works
 	event void EpochTimer.fired()
 	{
+		//Initializing the variables we need to use for the timer events
 		error_t enqueueDone;
 		uint8_t minVal, maxVal;
 
@@ -249,16 +269,20 @@ implementation
 		MaxMsg* maxpkt;
 
 		uint8_t i;
+
+		//Check if this node is the root
 		if(TOS_NODE_ID == 0){
+			//Switch for the query type to see what the task is
 				switch (currentQueryType){
-					case 1:
+					case 1: //SUM
 						for(i=0;i<lastChild;i++){
-							total_sum += childrenSum[i];
+							total_sum += childrenSum[i]; //Add all the children's sum to find the total
 						}
 						dbg("Project", "We have reached the root!! Total_sum = %u\n ", total_sum);
 						break;
-					case 2:
+					case 2: //AVG
 						for(i=0;i<lastChild;i++){
+							//Find the sum like before and count the number of children this node has
 							total_sum += childrenSum[i];
 							total_count += childrenNum[i];
 						}
@@ -269,12 +293,14 @@ implementation
 							return;
 						}
 
+						//Calculate the average
 						avg = (float)total_sum/total_count;
 						dbg("Project", "Root Message: Total_Average = %f\n ", avg);
 						break;
 
-					case 3:
+					case 3://VARIANCE
 						for(i=0;i<lastChild;i++){
+							//Find the sum and count like before and add all the squares of the measurements
 							total_sum += childrenSum[i];
 							total_count += childrenNum[i];
 							total_sum_squared += childrenSumSquared[i];
@@ -284,13 +310,15 @@ implementation
 							dbg("Project", "No children found!!\n ");
 							return;
 						}
+						//Calculate the variance using the formula
 						avg = (float)total_sum/(float)total_count;
 						var = ((float)total_sum_squared/(float)total_count) - (float)(avg * avg);
 						dbg("Project","Root Message: Total_Variance = %f\n", var);
 						break;
-					case 4:
+					case 4://MAX
 						for(i=0; i<lastChild;i++){
 							if(childrenMax[i]>total_max){
+								//compare each child max with the rest to find the total max
 								total_max = childrenMax[i];
 							}
 						}
@@ -307,7 +335,7 @@ implementation
 			return;
 		}
 
-		// 1. Generate measurement (1-100, with +/-25% drift after first epoch)
+		//Generate measurement (1-100, with +/-25% drift after first epoch)
 		if (isFirstEpoch) {
 			currentMeasurement = (call Random.rand16() % 100) + 1;
 			isFirstEpoch = FALSE;
@@ -323,7 +351,7 @@ implementation
 			} 
 			currentMeasurement = minVal + (call Random.rand16() % (maxVal - minVal + 1));
 		}
-
+		//Measure the local measurement using the children data if not the root
 		switch (currentQueryType) {
 			case 1: // SUM
 				sumpkt = (SumMsg*) (call MyMSG_Packet.getPayload(&tmp, sizeof(SumMsg)));
@@ -395,7 +423,7 @@ implementation
 			default:
 				return;
 		}
-		
+		//Put the packet in the queue and transmit it if the queue was empty
 		enqueueDone = call MyMSGSendQueue.enqueue(tmp);
 		if (enqueueDone == SUCCESS) {
 			if (call MyMSGSendQueue.size() == 1) {
@@ -452,7 +480,7 @@ implementation
 		return msg;
 	}
 	
-
+	//Event that receives the child data packets and processes them
 	event message_t* MyMSG_Receive.receive(message_t* msg, void* payload, uint8_t len)
 	{
 		error_t enqueueDone;
@@ -524,8 +552,10 @@ implementation
 		}
 	}
 
+	//This task receives the incoming data and processes them depending on the payload length
 	task void receiveMyTask()
 	{
+		//Initialize the variables for the task receive task
 		message_t radioDataRecPkt;
 		uint8_t len;
 		uint16_t sourceID;
@@ -554,6 +584,7 @@ implementation
 			return;
 		}
 
+		//We use switch case to find what the query is using the size of the payload
 		switch (len)
 		{
 			case sizeof(MaxMsg): // len == 1
@@ -591,7 +622,7 @@ implementation
 		dbg("SRTreeC", "receiveMyTask(): Updated child slot %d (node %u) for len=%u\n", childIdx, sourceID, len);
 	}
 
-
+	//It dequeues the packet from the queue and sends it to the parent if the flag is false
 	task void sendMyMSGTask()
 	{
     	uint8_t mlen;

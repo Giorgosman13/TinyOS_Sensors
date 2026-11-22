@@ -1,5 +1,5 @@
 import sys, math
-
+#Python file to create a topology.txt file with a set number of nodes and distance between connected nodes
 D = int	(sys.argv[1])
 R = float(sys.argv[2])
 
