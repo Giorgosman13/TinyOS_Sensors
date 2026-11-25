@@ -338,6 +338,8 @@ implementation
 			} 
 			currentMeasurement = minVal + (call Random.rand16() % (maxVal - minVal + 1));
 		}
+
+		dbg("Project", "Node %u (parent %d, depth %u): meas=%u\n", TOS_NODE_ID, parentID, curdepth, currentMeasurement);
 		//Measure the local measurement using the children data if not the root
 		switch (currentQueryType) {
 			case 1: // SUM
@@ -401,7 +403,7 @@ implementation
 					total_max = currentMeasurement;
 				}
 				atomic {
-					maxpkt->sum = total_max; 
+					maxpkt->max = total_max; 
 				}
 				call MyMSG_AMPacket.setDestination(&tmp, parentID);
 				call MyMSG_Packet.setPayloadLength(&tmp, sizeof(MaxMsg));
@@ -692,7 +694,7 @@ implementation
 				currentQueryType = mpkt->queryType;         // Set once upon joining
 				currentEpochDuration = mpkt->epochDuration;
 				
-				call EpochTimer.startPeriodicAt(0-(uint32_t)curdepth*1024, (uint32_t)currentEpochDuration*1024);
+				call EpochTimer.startPeriodicAt(0-(uint32_t)curdepth*1024 + (call Random.rand16() %512), (uint32_t)currentEpochDuration*1024);
 				call RoutingMsgTimer.startOneShot(TIMER_FAST_PERIOD);
 			}
 		}
