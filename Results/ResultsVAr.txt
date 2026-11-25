@@ -1,0 +1,96 @@
+TicksPerSecond :  10000000000 
+
+Loaded topology with 9 nodes.
+0:0:10.000000064 DEBUG (0): random seed = 641
+0:0:10.000000064 DEBUG (0): epoch duration = 90
+0:0:10.000000064 DEBUG (0): message type = 3
+0:0:10.000000064 DEBUG (0): curdepth = 0  ,  parentID= 0 
+0:0:10.000000064 DEBUG (1): random seed = 642
+0:0:10.000000064 DEBUG (1): curdepth = 255  ,  parentID= -1 
+0:0:10.000000064 DEBUG (2): random seed = 643
+0:0:10.000000064 DEBUG (2): curdepth = 255  ,  parentID= -1 
+0:0:10.000000064 DEBUG (3): random seed = 644
+0:0:10.000000064 DEBUG (3): curdepth = 255  ,  parentID= -1 
+0:0:10.000000064 DEBUG (4): random seed = 645
+0:0:10.000000064 DEBUG (4): curdepth = 255  ,  parentID= -1 
+0:0:10.000000064 DEBUG (5): random seed = 646
+0:0:10.000000064 DEBUG (5): curdepth = 255  ,  parentID= -1 
+0:0:10.000000064 DEBUG (6): random seed = 647
+0:0:10.000000064 DEBUG (6): curdepth = 255  ,  parentID= -1 
+0:0:10.000000064 DEBUG (7): random seed = 648
+0:0:10.000000064 DEBUG (7): curdepth = 255  ,  parentID= -1 
+0:0:10.000000064 DEBUG (8): random seed = 649
+0:0:10.000000064 DEBUG (8): curdepth = 255  ,  parentID= -1 
+0:1:38.005859449 DEBUG (8): Node 8 (parent 4, depth 2): meas=72
+0:1:38.027343824 DEBUG (2): Node 2 (parent 1, depth 2): meas=73
+0:1:38.092773512 DEBUG (7): Node 7 (parent 4, depth 2): meas=83
+0:1:38.179687574 DEBUG (6): Node 6 (parent 4, depth 2): meas=94
+0:1:38.266601637 DEBUG (5): Node 5 (parent 1, depth 2): meas=41
+0:1:39.114257886 DEBUG (1): Node 1 (parent 0, depth 1): meas=84
+0:1:39.353515699 DEBUG (4): Node 4 (parent 0, depth 1): meas=51
+0:1:39.440429761 DEBUG (3): Node 3 (parent 0, depth 1): meas=62
+0:1:40.000000074 DEBUG (0): Root Message: Total_Variance = 277.500000
+0:3:8.005859449 DEBUG (8): Node 8 (parent 4, depth 2): meas=55
+0:3:8.027343824 DEBUG (2): Node 2 (parent 1, depth 2): meas=84
+0:3:8.092773512 DEBUG (7): Node 7 (parent 4, depth 2): meas=86
+0:3:8.179687574 DEBUG (6): Node 6 (parent 4, depth 2): meas=83
+0:3:8.266601637 DEBUG (5): Node 5 (parent 1, depth 2): meas=45
+0:3:9.114257886 DEBUG (1): Node 1 (parent 0, depth 1): meas=75
+0:3:9.353515699 DEBUG (4): Node 4 (parent 0, depth 1): meas=62
+0:3:9.440429761 DEBUG (3): Node 3 (parent 0, depth 1): meas=50
+0:3:10.000000074 DEBUG (0): Root Message: Total_Variance = 238.750000
+0:4:38.005859449 DEBUG (8): Node 8 (parent 4, depth 2): meas=63
+0:4:38.027343824 DEBUG (2): Node 2 (parent 1, depth 2): meas=98
+0:4:38.092773512 DEBUG (7): Node 7 (parent 4, depth 2): meas=100
+0:4:38.179687574 DEBUG (6): Node 6 (parent 4, depth 2): meas=86
+0:4:38.266601637 DEBUG (5): Node 5 (parent 1, depth 2): meas=47
+0:4:39.114257886 DEBUG (1): Node 1 (parent 0, depth 1): meas=92
+0:4:39.353515699 DEBUG (4): Node 4 (parent 0, depth 1): meas=50
+0:4:39.440429761 DEBUG (3): Node 3 (parent 0, depth 1): meas=38
+0:4:40.000000074 DEBUG (0): Root Message: Total_Variance = 441.859375
+0:6:8.005859449 DEBUG (8): Node 8 (parent 4, depth 2): meas=61
+0:6:8.027343824 DEBUG (2): Node 2 (parent 1, depth 2): meas=96
+0:6:8.092773512 DEBUG (7): Node 7 (parent 4, depth 2): meas=82
+0:6:8.179687574 DEBUG (6): Node 6 (parent 4, depth 2): meas=75
+0:6:8.266601637 DEBUG (5): Node 5 (parent 1, depth 2): meas=41
+0:6:9.114257886 DEBUG (1): Node 1 (parent 0, depth 1): meas=97
+0:6:9.353515699 DEBUG (4): Node 4 (parent 0, depth 1): meas=61
+0:6:9.440429761 DEBUG (3): Node 3 (parent 0, depth 1): meas=29
+0:6:10.000000074 DEBUG (0): Root Message: Total_Variance = 527.187500
+0:7:38.005859449 DEBUG (8): Node 8 (parent 4, depth 2): meas=75
+0:7:38.027343824 DEBUG (2): Node 2 (parent 1, depth 2): meas=89
+0:7:38.092773512 DEBUG (7): Node 7 (parent 4, depth 2): meas=91
+0:7:38.179687574 DEBUG (6): Node 6 (parent 4, depth 2): meas=65
+0:7:38.266601637 DEBUG (5): Node 5 (parent 1, depth 2): meas=51
+0:7:39.114257886 DEBUG (1): Node 1 (parent 0, depth 1): meas=75
+0:7:39.353515699 DEBUG (4): Node 4 (parent 0, depth 1): meas=74
+0:7:39.440429761 DEBUG (3): Node 3 (parent 0, depth 1): meas=26
+0:7:40.000000074 DEBUG (0): Root Message: Total_Variance = 395.687500
+0:9:8.005859449 DEBUG (8): Node 8 (parent 4, depth 2): meas=72
+0:9:8.027343824 DEBUG (2): Node 2 (parent 1, depth 2): meas=99
+0:9:8.092773512 DEBUG (7): Node 7 (parent 4, depth 2): meas=85
+0:9:8.179687574 DEBUG (6): Node 6 (parent 4, depth 2): meas=76
+0:9:8.266601637 DEBUG (5): Node 5 (parent 1, depth 2): meas=54
+0:9:9.114257886 DEBUG (1): Node 1 (parent 0, depth 1): meas=84
+0:9:9.353515699 DEBUG (4): Node 4 (parent 0, depth 1): meas=71
+0:9:9.440429761 DEBUG (3): Node 3 (parent 0, depth 1): meas=31
+0:9:10.000000074 DEBUG (0): Root Message: Total_Variance = 382.750000
+0:10:38.005859449 DEBUG (8): Node 8 (parent 4, depth 2): meas=79
+0:10:38.027343824 DEBUG (2): Node 2 (parent 1, depth 2): meas=94
+0:10:38.092773512 DEBUG (7): Node 7 (parent 4, depth 2): meas=91
+0:10:38.179687574 DEBUG (6): Node 6 (parent 4, depth 2): meas=63
+0:10:38.266601637 DEBUG (5): Node 5 (parent 1, depth 2): meas=53
+0:10:39.114257886 DEBUG (1): Node 1 (parent 0, depth 1): meas=91
+0:10:39.353515699 DEBUG (4): Node 4 (parent 0, depth 1): meas=87
+0:10:39.440429761 DEBUG (3): Node 3 (parent 0, depth 1): meas=34
+0:10:40.000000074 DEBUG (0): Root Message: Total_Variance = 354.500000
+0:12:8.005859449 DEBUG (8): Node 8 (parent 4, depth 2): meas=90
+0:12:8.027343824 DEBUG (2): Node 2 (parent 1, depth 2): meas=84
+0:12:8.092773512 DEBUG (7): Node 7 (parent 4, depth 2): meas=86
+0:12:8.179687574 DEBUG (6): Node 6 (parent 4, depth 2): meas=63
+0:12:8.266601637 DEBUG (5): Node 5 (parent 1, depth 2): meas=39
+0:12:9.114257886 DEBUG (1): Node 1 (parent 0, depth 1): meas=86
+0:12:9.353515699 DEBUG (4): Node 4 (parent 0, depth 1): meas=69
+0:12:9.440429761 DEBUG (3): Node 3 (parent 0, depth 1): meas=26
+0:12:10.000000074 DEBUG (0): Root Message: Total_Variance = 491.250000
+Simulation finished.
