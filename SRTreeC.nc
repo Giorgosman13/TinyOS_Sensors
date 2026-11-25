@@ -339,7 +339,7 @@ implementation
 			currentMeasurement = minVal + (call Random.rand16() % (maxVal - minVal + 1));
 		}
 
-		dbg("Project", "Node %u (parent %d, depth %u): meas=%u\n", TOS_NODE_ID, parentID, curdepth, currentMeasurement);
+		//dbg("Project", "Node %u (parent %d, depth %u): meas=%u\n", TOS_NODE_ID, parentID, curdepth, currentMeasurement);
 		//Measure the local measurement using the children data if not the root
 		switch (currentQueryType) {
 			case 1: // SUM
