@@ -694,7 +694,7 @@ implementation
 				currentQueryType = mpkt->queryType;         // Set once upon joining
 				currentEpochDuration = mpkt->epochDuration;
 				
-				call EpochTimer.startPeriodicAt(0-(uint32_t)curdepth*1024 + (call Random.rand16() %69), (uint32_t)currentEpochDuration*1024);
+				call EpochTimer.startPeriodicAt(0-(uint32_t)curdepth*1024 + (call Random.rand16() %100), (uint32_t)currentEpochDuration*1024);
 				call RoutingMsgTimer.startOneShot(TIMER_FAST_PERIOD);
 			}
 		}
